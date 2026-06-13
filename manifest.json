@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "CloudLab Host Downloader",
+  "version": "1.0.0",
+  "description": "Adds CloudLab experiment buttons that download SSH targets as user@hostname lines.",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://cloudlab.us/*",
+        "https://www.cloudlab.us/*",
+        "https://*.cloudlab.us/*"
+      ],
+      "js": [
+        "src/core.js",
+        "src/content.js"
+      ],
+      "css": [
+        "src/content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "https://cloudlab.us/*",
+    "https://www.cloudlab.us/*",
+    "https://*.cloudlab.us/*"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "cloudlab-host-downloader@yimingsu.local",
+      "strict_min_version": "142.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  }
+}

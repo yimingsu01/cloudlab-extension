@@ -1,0 +1,31 @@
+.cloudlab-host-downloader-button {
+  appearance: none;
+  background: #1f6feb;
+  border: 1px solid #1b5fc4;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  display: inline-block;
+  font: inherit;
+  line-height: 1.2;
+  margin: 0.25rem;
+  padding: 0.35rem 0.65rem;
+}
+
+.cloudlab-host-downloader-button:hover {
+  background: #1b5fc4;
+}
+
+.cloudlab-host-downloader-button:disabled {
+  cursor: wait;
+  opacity: 0.75;
+}
+
+.cloudlab-host-downloader-button[data-state="error"] {
+  background: #b42318;
+  border-color: #912018;
+}
+
+#cloudlab-host-downloader-page-action {
+  margin: 0.75rem 0;
+}
