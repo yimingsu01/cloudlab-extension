@@ -61,10 +61,15 @@
     return attributes;
   }
 
-  function addUniqueLoginEntry(entries, seen, username, hostname, port) {
+  function cleanOptionalString(value) {
+    return value ? String(value).trim() : "";
+  }
+
+  function addUniqueLoginEntry(entries, seen, username, hostname, port, nodeId) {
     const cleanHostname = hostname ? hostname.trim() : "";
     const cleanUsername = username ? username.trim() : "";
     const cleanPort = port ? String(port).trim() : "";
+    const cleanNodeId = cleanOptionalString(nodeId);
 
     if (!cleanHostname) {
       return;
@@ -79,8 +84,33 @@
     entries.push({
       username: cleanUsername,
       hostname: cleanHostname,
-      port: cleanPort
+      port: cleanPort,
+      nodeId: cleanNodeId
     });
+  }
+
+  function localXmlName(node) {
+    return String(node.localName || node.nodeName || "")
+      .split(":")
+      .pop()
+      .toLowerCase();
+  }
+
+  function nodeIdForLoginNode(loginNode) {
+    for (let node = loginNode.parentElement; node; node = node.parentElement) {
+      if (localXmlName(node) !== "node") {
+        continue;
+      }
+
+      return (
+        node.getAttribute("client_id") ||
+        node.getAttribute("client-id") ||
+        node.getAttribute("component_id") ||
+        ""
+      );
+    }
+
+    return "";
   }
 
   function parseLoginEntriesWithDomParser(xmlText) {
@@ -117,7 +147,8 @@
         entrySeen,
         node.getAttribute("username") || node.getAttribute("user"),
         node.getAttribute("hostname") || node.getAttribute("host"),
-        node.getAttribute("port")
+        node.getAttribute("port"),
+        nodeIdForLoginNode(node)
       );
     });
 
@@ -137,7 +168,8 @@
         seen,
         attributes.username || attributes.user,
         attributes.hostname || attributes.host,
-        attributes.port
+        attributes.port,
+        ""
       );
     }
 
@@ -205,6 +237,15 @@
     return shellSafeSshDestination(value) ? value : shellQuote(value);
   }
 
+  function formatSshTargetEndpoint(userAtHost, port) {
+    return port === "22" ? userAtHost : `${userAtHost}:${port}`;
+  }
+
+  function formatSshTargetLabel(nodeId, userAtHost, port) {
+    const endpoint = formatSshTargetEndpoint(userAtHost, port);
+    return nodeId ? `${nodeId} (${endpoint})` : endpoint;
+  }
+
   function formatSshTargets(loginEntries, currentUser) {
     const targets = [];
     const seen = new Set();
@@ -224,11 +265,14 @@
       }
 
       seen.add(key);
+      const nodeId = cleanOptionalString(entry.nodeId);
       targets.push({
+        nodeId,
         username,
         hostname: entry.hostname,
         port,
         userAtHost,
+        label: formatSshTargetLabel(nodeId, userAtHost, port),
         command:
           port === "22"
             ? `ssh ${formatSshDestination(userAtHost)}`

@@ -44,9 +44,32 @@
   background: #6f42c1;
 }
 
+.cloudlab-host-downloader-ssh-control {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.25rem;
+  vertical-align: middle;
+}
+
+.cloudlab-host-downloader-ssh-control .cloudlab-host-downloader-copy-button {
+  margin: 0;
+}
+
+.cloudlab-host-downloader-node-select {
+  border: 1px solid #8c959f;
+  border-radius: 4px;
+  font: inherit;
+  max-width: 18rem;
+  padding: 0.18rem 0.35rem;
+}
+
 .cloudlab-host-downloader-inline-button {
   margin-left: 0.5rem;
   padding: 0.2rem 0.5rem;
+}
+
+.cloudlab-host-downloader-inline-control {
+  margin-left: 0.5rem;
 }
 
 #cloudlab-host-downloader-page-action {

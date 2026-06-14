@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "CloudLab Host Downloader",
-  "version": "1.0.7",
-  "description": "Adds CloudLab experiment buttons that download SSH targets as user@hostname lines.",
+  "version": "1.0.8",
+  "description": "Adds CloudLab dashboard buttons for host downloads, SSH command copying, and experiment extension.",
   "content_scripts": [
     {
       "matches": [

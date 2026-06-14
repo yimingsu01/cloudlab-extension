@@ -1,6 +1,6 @@
 # cloudlab-extension
 
-Firefox 142+ WebExtension that adds **Download hosts** buttons to CloudLab experiment pages and experiment lists. Each downloaded text file contains one SSH target per line:
+Firefox 142+ WebExtension that adds CloudLab dashboard controls for host downloads, SSH command copying, and experiment extension. Each downloaded text file contains one SSH target per line:
 
 ```text
 user@hostname
@@ -17,7 +17,7 @@ Temporary add-ons are removed when Firefox restarts. To keep the add-on loaded, 
 
 ## Usage
 
-Open your CloudLab user dashboard. The extension adds **Download hosts** and **Extend** buttons next to each experiment name it can identify. **Download hosts** saves a `*-cloudlab-hosts.txt` file. **Extend** opens the experiment status page and triggers CloudLab's native extension dialog, so the request uses CloudLab's normal endpoint and approval flow.
+Open your CloudLab user dashboard. The extension adds **Download hosts**, an SSH node dropdown with a **copy ssh cmd** button, and **Extend** next to each experiment name it can identify. **Download hosts** saves a `*-cloudlab-hosts.txt` file. Select a node in the dropdown and click **copy ssh cmd** to copy the exact SSH command for that node. **Extend** opens the experiment status page and triggers CloudLab's native extension dialog, so the request uses CloudLab's normal endpoint and approval flow.
 
 The extension uses CloudLab's same-origin `server-ajax.php` status calls with your existing logged-in browser session. It reads the manifest login hostnames and combines them with the currently logged-in CloudLab user ID, matching the portal's SSH list behavior.
 

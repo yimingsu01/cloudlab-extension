@@ -54,27 +54,52 @@ test("formats SSH targets with ports and port-aware distinctness", () => {
 
   assert.deepEqual(core.sshTargetsFromManifest(xml, "alice"), [
     {
+      nodeId: "",
       username: "alice",
       hostname: "shared.example.cloudlab.us",
       port: "2201",
       userAtHost: "alice@shared.example.cloudlab.us",
+      label: "alice@shared.example.cloudlab.us:2201",
       command: "ssh -p 2201 alice@shared.example.cloudlab.us"
     },
     {
+      nodeId: "",
       username: "alice",
       hostname: "shared.example.cloudlab.us",
       port: "2202",
       userAtHost: "alice@shared.example.cloudlab.us",
+      label: "alice@shared.example.cloudlab.us:2202",
       command: "ssh -p 2202 alice@shared.example.cloudlab.us"
     },
     {
+      nodeId: "",
       username: "alice",
       hostname: "default.example.cloudlab.us",
       port: "22",
       userAtHost: "alice@default.example.cloudlab.us",
+      label: "alice@default.example.cloudlab.us",
       command: "ssh alice@default.example.cloudlab.us"
     }
   ]);
+});
+
+test("formats SSH target labels with manifest node names", () => {
+  const targets = core.formatSshTargets(
+    [
+      {
+        nodeId: "node-1",
+        username: "creator",
+        hostname: "node1.example.cloudlab.us",
+        port: "2201"
+      }
+    ],
+    "alice"
+  );
+
+  assert.equal(
+    targets[0].label,
+    "node-1 (alice@node1.example.cloudlab.us:2201)"
+  );
 });
 
 test("shell-quotes unsafe SSH destinations", () => {

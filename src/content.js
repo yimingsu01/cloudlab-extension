@@ -457,19 +457,80 @@
     return button;
   }
 
-  function createCopyButton(descriptor, sshCommand) {
+  function formatSshOptionLabel(target) {
+    if (target.label) {
+      return target.label;
+    }
+
+    return target.port === "22"
+      ? target.userAtHost
+      : `${target.userAtHost}:${target.port}`;
+  }
+
+  function createSshNodeSelect(sshTargets) {
+    const select = document.createElement("select");
+    select.className = "cloudlab-host-downloader-node-select";
+    select.setAttribute("aria-label", "CloudLab SSH node");
+
+    sshTargets.forEach((target) => {
+      const option = document.createElement("option");
+      option.value = target.command;
+      option.textContent = formatSshOptionLabel(target);
+      option.title = target.command;
+      select.append(option);
+    });
+
+    select.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    select.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
+    });
+    return select;
+  }
+
+  function selectedSshCommand(select) {
+    return select.value || "";
+  }
+
+  function updateCopyButtonFromSelect(select, button) {
+    const sshCommand = selectedSshCommand(select);
+    button.disabled = !sshCommand;
+    button.title = sshCommand || "Select a node before copying the SSH command.";
+    if (button.dataset.state === "error") {
+      button.dataset.state = "ready";
+      button.textContent = "copy ssh cmd";
+    }
+  }
+
+  function createCopyButton(descriptor, select) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `${BUTTON_CLASS} cloudlab-host-downloader-copy-button`;
     button.textContent = "copy ssh cmd";
-    button.title = sshCommand;
     button.setAttribute(COPY_TARGET_ATTR, descriptor.uuid);
+    updateCopyButtonFromSelect(select, button);
+    select.addEventListener("change", (event) => {
+      event.stopPropagation();
+      updateCopyButtonFromSelect(select, button);
+    });
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      copySshCommand(sshCommand, button);
+      copySshCommand(selectedSshCommand(select), button);
     });
     return button;
+  }
+
+  function createCopyControl(descriptor, sshTargets) {
+    const control = document.createElement("span");
+    control.className = "cloudlab-host-downloader-ssh-control";
+    control.setAttribute(COPY_TARGET_ATTR, descriptor.uuid);
+
+    const select = createSshNodeSelect(sshTargets);
+    const button = createCopyButton(descriptor, select);
+    control.append(select, button);
+    return control;
   }
 
   function createInlineButton(descriptor) {
@@ -478,10 +539,10 @@
     return button;
   }
 
-  function createInlineCopyButton(descriptor, sshCommand) {
-    const button = createCopyButton(descriptor, sshCommand);
-    button.classList.add("cloudlab-host-downloader-inline-button");
-    return button;
+  function createInlineCopyControl(descriptor, sshTargets) {
+    const control = createCopyControl(descriptor, sshTargets);
+    control.classList.add("cloudlab-host-downloader-inline-control");
+    return control;
   }
 
   function createInlineExtendButton(descriptor) {
@@ -555,6 +616,9 @@
   async function copySshCommand(sshCommand, button) {
     const originalText = button.textContent;
     try {
+      if (!sshCommand) {
+        throw new Error("Select a node before copying the SSH command.");
+      }
       await writeClipboardText(sshCommand);
       button.textContent = "copied";
       window.setTimeout(() => {
@@ -872,17 +936,17 @@
       inserted = true;
     }
 
-    ensureSingleNodeCopyButton(row, descriptor);
+    ensureSshCopyControl(row, descriptor);
     return inserted;
   }
 
-  async function ensureSingleNodeCopyButton(row, descriptor) {
-    if (!row || descriptor.nodeCount !== 1 || hasCopyButtonForUuid(descriptor.uuid, row)) {
+  async function ensureSshCopyControl(row, descriptor) {
+    if (!row || descriptor.nodeCount === 0 || hasCopyButtonForUuid(descriptor.uuid, row)) {
       return;
     }
 
     const sshTargets = await sshTargetsForDescriptor(descriptor);
-    if (!row.isConnected || sshTargets.length !== 1 || hasCopyButtonForUuid(descriptor.uuid, row)) {
+    if (!row.isConnected || sshTargets.length === 0 || hasCopyButtonForUuid(descriptor.uuid, row)) {
       return;
     }
 
@@ -891,8 +955,7 @@
       return;
     }
 
-    const sshCommand = sshTargets[0].command;
-    const copyButton = createInlineCopyButton(descriptor, sshCommand);
+    const copyControl = createInlineCopyControl(descriptor, sshTargets);
     const downloadButton = row.querySelector(buttonSelectorForUuid(descriptor.uuid));
     const extendButton = row.querySelector(extendButtonSelectorForUuid(descriptor.uuid));
     const statusLink = dashboardStatusLink(row, descriptor);
@@ -902,11 +965,11 @@
       null;
 
     if (insertionPoint) {
-      insertionPoint.after(" ", copyButton);
+      insertionPoint.after(" ", copyControl);
     } else if (extendButton && extendButton.parentElement === cell) {
-      extendButton.before(copyButton, " ");
+      extendButton.before(copyControl, " ");
     } else {
-      cell.append(" ", copyButton);
+      cell.append(" ", copyControl);
     }
   }
 
