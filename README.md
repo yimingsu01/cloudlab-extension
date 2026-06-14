@@ -1,10 +1,15 @@
 # cloudlab-extension
 
-Firefox 142+ WebExtension that adds CloudLab dashboard controls for host downloads, SSH command copying, and experiment extension. Each downloaded text file contains one SSH target per line:
+Manifest V3 browser extension for Firefox and Chrome that adds CloudLab dashboard controls for host downloads, SSH command copying, and experiment extension. Each downloaded text file contains one SSH target per line:
 
 ```text
 user@hostname
 ```
+
+## Browser support
+
+- Firefox 142 or newer.
+- Chrome and Chromium-based browsers that support Manifest V3 extensions.
 
 ## Install temporarily in Firefox
 
@@ -14,6 +19,16 @@ user@hostname
 4. Visit `https://www.cloudlab.us/` while logged in.
 
 Temporary add-ons are removed when Firefox restarts. To keep the add-on loaded, package and sign it through Mozilla's standard extension workflow.
+
+## Install unpacked in Chrome
+
+1. Open `chrome://extensions`.
+2. Enable **Developer mode**.
+3. Click **Load unpacked**.
+4. Select this repository directory.
+5. Visit `https://www.cloudlab.us/` while logged in.
+
+Chrome keeps unpacked extensions loaded until you remove them or disable Developer mode. To distribute the extension permanently, package it through the Chrome Web Store workflow.
 
 ## Usage
 

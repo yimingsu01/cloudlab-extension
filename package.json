@@ -2,7 +2,7 @@
   "name": "cloudlab-host-downloader",
   "version": "1.0.8",
   "private": true,
-  "description": "Firefox extension that adds CloudLab dashboard controls for SSH targets and experiment extension.",
+  "description": "Firefox and Chrome extension that adds CloudLab dashboard controls for SSH targets and experiment extension.",
   "scripts": {
     "build": "npx --yes web-ext@latest build --source-dir . --artifacts-dir dist --overwrite-dest --ignore-files package.json test test/** dist",
     "lint:extension": "npx --yes web-ext@latest lint --source-dir . --ignore-files package.json test test/** dist",
