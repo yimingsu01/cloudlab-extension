@@ -4,8 +4,11 @@
   const core = window.CloudLabHostDownloaderCore || globalThis.CloudLabHostDownloaderCore;
   const BUTTON_CLASS = "cloudlab-host-downloader-button";
   const DASHBOARD_PANEL_ID = "cloudlab-host-downloader-dashboard-panel";
+  const AUTO_EXTEND_HASH = "#cloudlab-host-downloader-open-extend";
   const TARGET_ATTR = "data-cloudlab-host-downloader-target";
+  const EXTEND_TARGET_ATTR = "data-cloudlab-host-downloader-extend-target";
   const SCAN_DELAY_MS = 250;
+  const EXTEND_AUTOPEN_TIMEOUT_MS = 30000;
 
   let scanTimer = 0;
   let pageContext;
@@ -22,6 +25,14 @@
       document.body.prepend(panel);
     }
     return;
+  }
+
+  function isStatusPage() {
+    return /\/(?:portal\/)?status\.php$/.test(location.pathname);
+  }
+
+  function shouldAutoOpenNativeExtendDialog() {
+    return isStatusPage() && location.hash === AUTO_EXTEND_HASH;
   }
 
   function readPageGlobal(path) {
@@ -397,8 +408,28 @@
     return button;
   }
 
+  function createExtendButton(descriptor) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `${BUTTON_CLASS} cloudlab-host-downloader-extend-button`;
+    button.textContent = "Extend";
+    button.setAttribute(EXTEND_TARGET_ATTR, descriptor.uuid);
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openNativeExtendDialog(descriptor);
+    });
+    return button;
+  }
+
   function createInlineButton(descriptor) {
     const button = createButton(descriptor);
+    button.classList.add("cloudlab-host-downloader-inline-button");
+    return button;
+  }
+
+  function createInlineExtendButton(descriptor) {
+    const button = createExtendButton(descriptor);
     button.classList.add("cloudlab-host-downloader-inline-button");
     return button;
   }
@@ -415,6 +446,91 @@
   function hasButtonForUuid(uuid, scope) {
     const root = scope || document;
     return Boolean(root.querySelector(buttonSelectorForUuid(uuid)));
+  }
+
+  function extendButtonSelectorForUuid(uuid) {
+    const escapedUuid =
+      window.CSS && typeof window.CSS.escape === "function"
+        ? window.CSS.escape(uuid)
+        : String(uuid).replace(/["\\]/g, "\\$&");
+
+    return `[${EXTEND_TARGET_ATTR}="${escapedUuid}"]`;
+  }
+
+  function hasExtendButtonForUuid(uuid, scope) {
+    const root = scope || document;
+    return Boolean(root.querySelector(extendButtonSelectorForUuid(uuid)));
+  }
+
+  function openNativeExtendDialog(descriptor) {
+    const url = new URL(descriptor.statusUrl, location.href);
+    url.hash = AUTO_EXTEND_HASH.slice(1);
+    window.open(url.href, "_blank");
+  }
+
+  function nativeExtendButtonReady(button) {
+    return (
+      button &&
+      !button.disabled &&
+      !button.classList.contains("hidden") &&
+      window.getComputedStyle(button).display !== "none"
+    );
+  }
+
+  function clickNativeExtendButton(button) {
+    try {
+      history.replaceState(null, document.title, `${location.pathname}${location.search}`);
+    } catch (_error) {
+      location.hash = "";
+    }
+
+    button.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      })
+    );
+  }
+
+  function autoOpenNativeExtendDialog() {
+    const startedAt = Date.now();
+    let observer;
+
+    const tryOpen = () => {
+      const button = document.querySelector("button#extend_button");
+      if (nativeExtendButtonReady(button)) {
+        if (observer) {
+          observer.disconnect();
+        }
+        clickNativeExtendButton(button);
+        return true;
+      }
+
+      if (Date.now() - startedAt > EXTEND_AUTOPEN_TIMEOUT_MS) {
+        if (observer) {
+          observer.disconnect();
+        }
+        window.alert(
+          "CloudLab Host Downloader could not open the native Extend dialog. Use the Extend button on this status page."
+        );
+        return true;
+      }
+
+      return false;
+    };
+
+    if (tryOpen()) {
+      return;
+    }
+
+    observer = new MutationObserver(tryOpen);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      childList: true,
+      subtree: true
+    });
+    window.setTimeout(tryOpen, 1000);
   }
 
   function labelFromContainer(container, fallback) {
@@ -560,6 +676,7 @@
       name,
       project,
       creator,
+      expires: value.expires || "",
       dashboardGroup: group,
       dashboardIndex: index,
       isCurrentPage: false
@@ -579,7 +696,7 @@
   }
 
   function appendDashboardNameButton(row, descriptor) {
-    if (!row || hasButtonForUuid(descriptor.uuid, row)) {
+    if (!row) {
       return false;
     }
 
@@ -588,14 +705,40 @@
       return false;
     }
 
-    const button = createInlineButton(descriptor);
     const statusLink = dashboardStatusLink(row, descriptor);
-    if (statusLink && statusLink.parentElement === cell) {
-      statusLink.after(" ", button);
-    } else {
-      cell.append(" ", button);
+    let insertionPoint = statusLink && statusLink.parentElement === cell
+      ? statusLink
+      : cell.lastChild;
+    let inserted = false;
+    const existingDownloadButton = row.querySelector(
+      buttonSelectorForUuid(descriptor.uuid)
+    );
+    if (existingDownloadButton && existingDownloadButton.parentElement === cell) {
+      insertionPoint = existingDownloadButton;
     }
-    return true;
+
+    if (!hasButtonForUuid(descriptor.uuid, row)) {
+      const button = createInlineButton(descriptor);
+      if (insertionPoint && insertionPoint.parentElement === cell) {
+        insertionPoint.after(" ", button);
+      } else {
+        cell.append(" ", button);
+      }
+      insertionPoint = button;
+      inserted = true;
+    }
+
+    if (!hasExtendButtonForUuid(descriptor.uuid, row)) {
+      const extendButton = createInlineExtendButton(descriptor);
+      if (insertionPoint && insertionPoint.parentElement === cell) {
+        insertionPoint.after(" ", extendButton);
+      } else {
+        cell.append(" ", extendButton);
+      }
+      inserted = true;
+    }
+
+    return inserted;
   }
 
   function normalizeText(value) {
@@ -922,10 +1065,16 @@
     }, SCAN_DELAY_MS);
   }
 
-  scanForExperiments();
-  const observer = new MutationObserver(scheduleScan);
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true
-  });
+  if (shouldAutoOpenNativeExtendDialog()) {
+    autoOpenNativeExtendDialog();
+  }
+
+  if (isDashboardPage()) {
+    scanForExperiments();
+    const observer = new MutationObserver(scheduleScan);
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true
+    });
+  }
 })();

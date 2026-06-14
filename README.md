@@ -17,7 +17,7 @@ Temporary add-ons are removed when Firefox restarts. To keep the add-on loaded, 
 
 ## Usage
 
-Open your CloudLab user dashboard. The extension adds a **Download hosts** button next to each experiment name it can identify. Clicking the button downloads a `*-cloudlab-hosts.txt` file.
+Open your CloudLab user dashboard. The extension adds **Download hosts** and **Extend** buttons next to each experiment name it can identify. **Download hosts** saves a `*-cloudlab-hosts.txt` file. **Extend** opens the experiment status page and triggers CloudLab's native extension dialog, so the request uses CloudLab's normal endpoint and approval flow.
 
 The extension uses CloudLab's same-origin `server-ajax.php` status calls with your existing logged-in browser session. It reads the manifest login hostnames and combines them with the currently logged-in CloudLab user ID, matching the portal's SSH list behavior.
 

@@ -26,6 +26,15 @@
   border-color: #912018;
 }
 
+.cloudlab-host-downloader-extend-button {
+  background: #1a7f37;
+  border-color: #166b2f;
+}
+
+.cloudlab-host-downloader-extend-button:hover {
+  background: #166b2f;
+}
+
 .cloudlab-host-downloader-inline-button {
   margin-left: 0.5rem;
   padding: 0.2rem 0.5rem;
