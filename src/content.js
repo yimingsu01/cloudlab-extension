@@ -1,7 +1,7 @@
 (function runCloudLabHostDownloader() {
   "use strict";
 
-  const core = window.CloudLabHostDownloaderCore;
+  const core = window.CloudLabHostDownloaderCore || globalThis.CloudLabHostDownloaderCore;
   const BUTTON_CLASS = "cloudlab-host-downloader-button";
   const PAGE_ACTION_ID = "cloudlab-host-downloader-page-action";
   const DASHBOARD_PANEL_ID = "cloudlab-host-downloader-dashboard-panel";
@@ -11,6 +11,18 @@
   let scanTimer = 0;
   let pageContext;
   let dashboardLoadPromise;
+  let dashboardLoadError = "";
+
+  if (!core) {
+    if (document.body && /\/(?:portal\/)?user-dashboard\.php$/.test(location.pathname)) {
+      const panel = document.createElement("div");
+      panel.id = DASHBOARD_PANEL_ID;
+      panel.textContent =
+        "CloudLab Host Downloader loaded, but its shared parser script did not initialize.";
+      document.body.prepend(panel);
+    }
+    return;
+  }
 
   function readPageGlobal(path) {
     try {
@@ -537,7 +549,30 @@
       });
   }
 
-  function createDashboardPanel(descriptors) {
+  function dashboardPanelContainer() {
+    return (
+      document.querySelector("#experiments") ||
+      document.querySelector("#experiments_content") ||
+      document.querySelector("#main-body") ||
+      document.body
+    );
+  }
+
+  function insertDashboardPanel(panel) {
+    if (panel.isConnected) {
+      return;
+    }
+
+    const experimentsContent = document.querySelector("#experiments_content");
+    if (experimentsContent && experimentsContent.parentElement) {
+      experimentsContent.insertAdjacentElement("beforebegin", panel);
+      return;
+    }
+
+    dashboardPanelContainer().prepend(panel);
+  }
+
+  function createDashboardPanel(descriptors, state) {
     let panel = document.getElementById(DASHBOARD_PANEL_ID);
     if (!panel) {
       panel = document.createElement("div");
@@ -548,6 +583,37 @@
     const heading = document.createElement("h4");
     heading.textContent = "CloudLab host downloads";
     panel.append(heading);
+
+    if (state === "loading") {
+      const message = document.createElement("p");
+      message.className = "cloudlab-host-downloader-dashboard-message";
+      message.textContent = "Loading CloudLab experiments...";
+      panel.append(message);
+      insertDashboardPanel(panel);
+      return panel;
+    }
+
+    if (state === "error") {
+      const message = document.createElement("p");
+      message.className =
+        "cloudlab-host-downloader-dashboard-message cloudlab-host-downloader-dashboard-error";
+      message.textContent =
+        dashboardLoadError ||
+        "The extension loaded, but CloudLab experiment lookup failed.";
+      panel.append(message);
+      insertDashboardPanel(panel);
+      return panel;
+    }
+
+    if (descriptors.length === 0) {
+      const message = document.createElement("p");
+      message.className = "cloudlab-host-downloader-dashboard-message";
+      message.textContent =
+        "The extension loaded, but no active CloudLab experiments were returned.";
+      panel.append(message);
+      insertDashboardPanel(panel);
+      return panel;
+    }
 
     descriptors.forEach((descriptor) => {
       const row = document.createElement("div");
@@ -561,35 +627,18 @@
       panel.append(row);
     });
 
-    const experimentsTab =
-      document.querySelector("#experiments") ||
-      document.querySelector("#experiments_content") ||
-      document.body;
-    const firstContent =
-      document.querySelector("#experiments_content") ||
-      experimentsTab.firstElementChild;
-
-    if (!panel.isConnected) {
-      if (firstContent && firstContent.parentElement) {
-        firstContent.insertAdjacentElement("beforebegin", panel);
-      } else {
-        experimentsTab.prepend(panel);
-      }
-    }
+    insertDashboardPanel(panel);
+    return panel;
   }
 
   function renderDashboardExperimentButtons(descriptors) {
-    if (descriptors.length === 0) {
-      return;
-    }
-
     addDashboardTableButtons(descriptors, "user", "#experiments_content");
     addDashboardTableButtons(
       descriptors,
       "project",
       "#project_experiments_content"
     );
-    createDashboardPanel(descriptors);
+    createDashboardPanel(descriptors, "ready");
   }
 
   async function loadDashboardExperiments() {
@@ -641,13 +690,21 @@
     }
 
     if (!dashboardLoadPromise) {
+      createDashboardPanel([], "loading");
       dashboardLoadPromise = loadDashboardExperiments().catch((error) => {
         console.warn("CloudLab Host Downloader dashboard load failed:", error);
+        dashboardLoadError = `The extension loaded, but CloudLab experiment lookup failed: ${error.message}`;
         return [];
       });
     }
 
-    dashboardLoadPromise.then(renderDashboardExperimentButtons);
+    dashboardLoadPromise.then((descriptors) => {
+      if (dashboardLoadError) {
+        createDashboardPanel([], "error");
+        return;
+      }
+      renderDashboardExperimentButtons(descriptors);
+    });
   }
 
   function classAndIdText(element) {

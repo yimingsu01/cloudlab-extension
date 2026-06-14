@@ -52,3 +52,11 @@
 .cloudlab-host-downloader-dashboard-label {
   font-weight: 600;
 }
+
+.cloudlab-host-downloader-dashboard-message {
+  margin: 0.25rem 0;
+}
+
+.cloudlab-host-downloader-dashboard-error {
+  color: #b42318;
+}
