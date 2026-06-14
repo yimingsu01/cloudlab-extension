@@ -12,6 +12,7 @@
   let pageContext;
   let dashboardLoadPromise;
   let dashboardLoadError = "";
+  let dashboardRowsRendered = false;
 
   if (!core) {
     if (document.body && /\/(?:portal\/)?user-dashboard\.php$/.test(location.pathname)) {
@@ -397,6 +398,12 @@
     return button;
   }
 
+  function createInlineButton(descriptor) {
+    const button = createButton(descriptor);
+    button.classList.add("cloudlab-host-downloader-inline-button");
+    return button;
+  }
+
   function buttonSelectorForUuid(uuid) {
     const escapedUuid =
       window.CSS && typeof window.CSS.escape === "function"
@@ -438,6 +445,10 @@
       .find(isVisibleTableCell);
   }
 
+  function firstVisibleTableCell(row) {
+    return Array.from(row.querySelectorAll("td, th")).find(isVisibleTableCell);
+  }
+
   function appendButtonToContainer(container, descriptor) {
     if (!container || hasButtonForUuid(descriptor.uuid, container)) {
       return;
@@ -445,6 +456,10 @@
 
     const button = createButton(descriptor);
     if (container.matches("tr")) {
+      if (appendDashboardNameButton(container, descriptor)) {
+        return;
+      }
+
       const lastCell = lastVisibleTableCell(container);
       if (lastCell) {
         lastCell.append(" ", button);
@@ -486,19 +501,62 @@
     return /\/(?:portal\/)?user-dashboard\.php$/.test(location.pathname);
   }
 
+  function htmlToText(value) {
+    const text = String(value || "").trim();
+    if (!text) {
+      return "";
+    }
+
+    if (typeof DOMParser !== "undefined" && /<[A-Za-z][^>]*>/.test(text)) {
+      const parsed = new DOMParser().parseFromString(text, "text/html");
+      return (parsed.body.textContent || "").replace(/\s+/g, " ").trim();
+    }
+
+    return text.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+  }
+
+  function firstHrefFromHtml(value) {
+    const text = String(value || "");
+    if (!text) {
+      return "";
+    }
+
+    if (typeof DOMParser !== "undefined" && /<[A-Za-z][^>]*>/.test(text)) {
+      const parsed = new DOMParser().parseFromString(text, "text/html");
+      const link = parsed.querySelector("a[href]");
+      return link ? link.getAttribute("href") || "" : "";
+    }
+
+    const match = text.match(/\bhref\s*=\s*["']([^"']+)["']/i);
+    return match ? match[1] : "";
+  }
+
   function dashboardExperimentDescriptor(value, group, index) {
-    if (!value || !core.extractUuidFromText(value.uuid || "")) {
+    if (!value) {
       return null;
     }
 
-    const name = String(value.name || value.eid || value.uuid).trim();
-    const project = String(value.project || value.pid || "").trim();
+    const rawName = String(value.name || value.eid || value.uuid || "").trim();
+    const rawProject = String(value.project || value.pid || "").trim();
+    const nameHref = firstHrefFromHtml(rawName);
+    const uuid =
+      core.extractUuidFromText(value.uuid || "") ||
+      core.extractUuidFromUrl(nameHref, location.href);
+    if (!uuid) {
+      return null;
+    }
+
+    const name = htmlToText(rawName) || uuid;
+    const project = htmlToText(rawProject);
     const creator = String(value.creator || "").trim();
     const labelParts = [project, name].filter(Boolean);
+    const statusUrl = nameHref
+      ? new URL(nameHref, location.href).href
+      : core.makeStatusUrl(uuid, location.href);
 
     return {
-      uuid: value.uuid,
-      statusUrl: core.makeStatusUrl(value.uuid, location.href),
+      uuid,
+      statusUrl,
       label: labelParts.length ? labelParts.join(" / ") : value.uuid,
       name,
       project,
@@ -507,6 +565,38 @@
       dashboardIndex: index,
       isCurrentPage: false
     };
+  }
+
+  function dashboardStatusLink(row, descriptor) {
+    return (
+      row.querySelector(`a[href*="status.php"][href*="${descriptor.uuid}"]`) ||
+      row.querySelector("a[href*='status.php'][href*='uuid=']")
+    );
+  }
+
+  function dashboardNameCell(row, descriptor) {
+    const statusLink = dashboardStatusLink(row, descriptor);
+    return (statusLink && statusLink.closest("td, th")) || firstVisibleTableCell(row);
+  }
+
+  function appendDashboardNameButton(row, descriptor) {
+    if (!row || hasButtonForUuid(descriptor.uuid, row)) {
+      return false;
+    }
+
+    const cell = dashboardNameCell(row, descriptor);
+    if (!cell) {
+      return false;
+    }
+
+    const button = createInlineButton(descriptor);
+    const statusLink = dashboardStatusLink(row, descriptor);
+    if (statusLink && statusLink.parentElement === cell) {
+      statusLink.after(" ", button);
+    } else {
+      cell.append(" ", button);
+    }
+    return true;
   }
 
   function normalizeText(value) {
@@ -539,14 +629,18 @@
   }
 
   function addDashboardTableButtons(descriptors, group, containerSelector) {
+    let inserted = 0;
+
     descriptors
       .filter((descriptor) => descriptor.dashboardGroup === group)
       .forEach((descriptor, index) => {
         const row = findDashboardRow(containerSelector, descriptor, index);
-        if (row) {
-          appendButtonToContainer(row, descriptor);
+        if (row && appendDashboardNameButton(row, descriptor)) {
+          inserted += 1;
         }
       });
+
+    return inserted;
   }
 
   function dashboardPanelContainer() {
@@ -631,13 +725,35 @@
     return panel;
   }
 
+  function removeDashboardPanel() {
+    const panel = document.getElementById(DASHBOARD_PANEL_ID);
+    if (panel) {
+      panel.remove();
+    }
+  }
+
+  function dashboardRowButtonCount() {
+    return document.querySelectorAll(
+      `#experiments_content [${TARGET_ATTR}], ` +
+        `#project_experiments_content [${TARGET_ATTR}]`
+    ).length;
+  }
+
   function renderDashboardExperimentButtons(descriptors) {
-    addDashboardTableButtons(descriptors, "user", "#experiments_content");
-    addDashboardTableButtons(
-      descriptors,
-      "project",
-      "#project_experiments_content"
-    );
+    const inserted =
+      addDashboardTableButtons(descriptors, "user", "#experiments_content") +
+      addDashboardTableButtons(
+        descriptors,
+        "project",
+        "#project_experiments_content"
+      );
+
+    if (inserted > 0 || dashboardRowsRendered || dashboardRowButtonCount() > 0) {
+      dashboardRowsRendered = true;
+      removeDashboardPanel();
+      return;
+    }
+
     createDashboardPanel(descriptors, "ready");
   }
 
