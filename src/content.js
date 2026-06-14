@@ -7,6 +7,7 @@
   const AUTO_EXTEND_HASH = "#cloudlab-host-downloader-open-extend";
   const TARGET_ATTR = "data-cloudlab-host-downloader-target";
   const EXTEND_TARGET_ATTR = "data-cloudlab-host-downloader-extend-target";
+  const COPY_TARGET_ATTR = "data-cloudlab-host-downloader-copy-target";
   const SCAN_DELAY_MS = 250;
   const EXTEND_AUTOPEN_TIMEOUT_MS = 30000;
 
@@ -15,6 +16,8 @@
   let dashboardLoadPromise;
   let dashboardLoadError = "";
   let dashboardRowsRendered = false;
+  const manifestPromiseCache = new Map();
+  const sshTargetsPromiseCache = new Map();
 
   if (!core) {
     if (document.body && /\/(?:portal\/)?user-dashboard\.php$/.test(location.pathname)) {
@@ -310,20 +313,32 @@
     return lines;
   }
 
-  async function collectHostLines(descriptor) {
-    const context = getPageContext();
-    let manifests = [];
+  async function fetchDescriptorManifests(descriptor) {
+    if (!manifestPromiseCache.has(descriptor.uuid)) {
+      const promise = (async () => {
+        try {
+          return await fetchManifestsForExperiment(
+            descriptor.uuid,
+            descriptor.statusUrl
+          );
+        } catch (rpcError) {
+          console.warn("CloudLab Host Downloader RPC fallback:", rpcError);
+          return fetchFallbackPageManifests(descriptor.statusUrl);
+        }
+      })().catch((error) => {
+        manifestPromiseCache.delete(descriptor.uuid);
+        throw error;
+      });
 
-    try {
-      manifests = await fetchManifestsForExperiment(
-        descriptor.uuid,
-        descriptor.statusUrl
-      );
-    } catch (rpcError) {
-      console.warn("CloudLab Host Downloader RPC fallback:", rpcError);
-      manifests = await fetchFallbackPageManifests(descriptor.statusUrl);
+      manifestPromiseCache.set(descriptor.uuid, promise);
     }
 
+    return manifestPromiseCache.get(descriptor.uuid);
+  }
+
+  async function collectHostLines(descriptor) {
+    const context = getPageContext();
+    const manifests = await fetchDescriptorManifests(descriptor);
     const lines = [];
     const seen = new Set();
     manifests.forEach((manifest) => {
@@ -346,6 +361,26 @@
     }
 
     return lines;
+  }
+
+  async function collectSshTargets(descriptor) {
+    const context = getPageContext();
+    const manifests = await fetchDescriptorManifests(descriptor);
+    const targets = [];
+    const seen = new Set();
+
+    manifests.forEach((manifest) => {
+      core.sshTargetsFromManifest(manifest, context.userId).forEach((target) => {
+        const key = `${target.userAtHost}:${target.port}`;
+        if (seen.has(key)) {
+          return;
+        }
+        seen.add(key);
+        targets.push(target);
+      });
+    });
+
+    return targets;
   }
 
   function downloadTextFile(filename, lines) {
@@ -422,8 +457,29 @@
     return button;
   }
 
+  function createCopyButton(descriptor, sshCommand) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `${BUTTON_CLASS} cloudlab-host-downloader-copy-button`;
+    button.textContent = "copy ssh cmd";
+    button.title = sshCommand;
+    button.setAttribute(COPY_TARGET_ATTR, descriptor.uuid);
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      copySshCommand(sshCommand, button);
+    });
+    return button;
+  }
+
   function createInlineButton(descriptor) {
     const button = createButton(descriptor);
+    button.classList.add("cloudlab-host-downloader-inline-button");
+    return button;
+  }
+
+  function createInlineCopyButton(descriptor, sshCommand) {
+    const button = createCopyButton(descriptor, sshCommand);
     button.classList.add("cloudlab-host-downloader-inline-button");
     return button;
   }
@@ -460,6 +516,70 @@
   function hasExtendButtonForUuid(uuid, scope) {
     const root = scope || document;
     return Boolean(root.querySelector(extendButtonSelectorForUuid(uuid)));
+  }
+
+  function copyButtonSelectorForUuid(uuid) {
+    const escapedUuid =
+      window.CSS && typeof window.CSS.escape === "function"
+        ? window.CSS.escape(uuid)
+        : String(uuid).replace(/["\\]/g, "\\$&");
+
+    return `[${COPY_TARGET_ATTR}="${escapedUuid}"]`;
+  }
+
+  function hasCopyButtonForUuid(uuid, scope) {
+    const root = scope || document;
+    return Boolean(root.querySelector(copyButtonSelectorForUuid(uuid)));
+  }
+
+  async function writeClipboardText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.setAttribute("readonly", "");
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    document.body.append(textArea);
+    textArea.select();
+    const copied = document.execCommand("copy");
+    textArea.remove();
+    if (!copied) {
+      throw new Error("Clipboard copy failed.");
+    }
+  }
+
+  async function copySshCommand(sshCommand, button) {
+    const originalText = button.textContent;
+    try {
+      await writeClipboardText(sshCommand);
+      button.textContent = "copied";
+      window.setTimeout(() => {
+        button.textContent = originalText;
+      }, 1500);
+    } catch (error) {
+      button.dataset.state = "error";
+      button.textContent = "copy failed";
+      button.title = error.message;
+      window.alert(`CloudLab Host Downloader: ${error.message}`);
+    }
+  }
+
+  function sshTargetsForDescriptor(descriptor) {
+    if (!sshTargetsPromiseCache.has(descriptor.uuid)) {
+      sshTargetsPromiseCache.set(
+        descriptor.uuid,
+        collectSshTargets(descriptor).catch((error) => {
+          console.warn("CloudLab Host Downloader SSH command lookup failed:", error);
+          return [];
+        })
+      );
+    }
+
+    return sshTargetsPromiseCache.get(descriptor.uuid);
   }
 
   function openNativeExtendDialog(descriptor) {
@@ -665,6 +785,10 @@
     const project = htmlToText(rawProject);
     const creator = String(value.creator || "").trim();
     const labelParts = [project, name].filter(Boolean);
+    const pcount = numberOrNull(value.pcount);
+    const vcount = numberOrNull(value.vcount);
+    const nodeCount =
+      pcount === null && vcount === null ? null : (pcount || 0) + (vcount || 0);
     const statusUrl = nameHref
       ? new URL(nameHref, location.href).href
       : core.makeStatusUrl(uuid, location.href);
@@ -677,10 +801,20 @@
       project,
       creator,
       expires: value.expires || "",
+      nodeCount,
       dashboardGroup: group,
       dashboardIndex: index,
       isCurrentPage: false
     };
+  }
+
+  function numberOrNull(value) {
+    if (value === null || typeof value === "undefined" || value === "") {
+      return null;
+    }
+
+    const number = Number.parseInt(String(value), 10);
+    return Number.isInteger(number) ? number : null;
   }
 
   function dashboardStatusLink(row, descriptor) {
@@ -738,7 +872,42 @@
       inserted = true;
     }
 
+    ensureSingleNodeCopyButton(row, descriptor);
     return inserted;
+  }
+
+  async function ensureSingleNodeCopyButton(row, descriptor) {
+    if (!row || descriptor.nodeCount !== 1 || hasCopyButtonForUuid(descriptor.uuid, row)) {
+      return;
+    }
+
+    const sshTargets = await sshTargetsForDescriptor(descriptor);
+    if (!row.isConnected || sshTargets.length !== 1 || hasCopyButtonForUuid(descriptor.uuid, row)) {
+      return;
+    }
+
+    const cell = dashboardNameCell(row, descriptor);
+    if (!cell) {
+      return;
+    }
+
+    const sshCommand = sshTargets[0].command;
+    const copyButton = createInlineCopyButton(descriptor, sshCommand);
+    const downloadButton = row.querySelector(buttonSelectorForUuid(descriptor.uuid));
+    const extendButton = row.querySelector(extendButtonSelectorForUuid(descriptor.uuid));
+    const statusLink = dashboardStatusLink(row, descriptor);
+    const insertionPoint =
+      (downloadButton && downloadButton.parentElement === cell && downloadButton) ||
+      (statusLink && statusLink.parentElement === cell && statusLink) ||
+      null;
+
+    if (insertionPoint) {
+      insertionPoint.after(" ", copyButton);
+    } else if (extendButton && extendButton.parentElement === cell) {
+      extendButton.before(copyButton, " ");
+    } else {
+      cell.append(" ", copyButton);
+    }
   }
 
   function normalizeText(value) {

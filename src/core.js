@@ -64,12 +64,13 @@
   function addUniqueLoginEntry(entries, seen, username, hostname, port) {
     const cleanHostname = hostname ? hostname.trim() : "";
     const cleanUsername = username ? username.trim() : "";
+    const cleanPort = port ? String(port).trim() : "";
 
     if (!cleanHostname) {
       return;
     }
 
-    const key = `${cleanUsername}@${cleanHostname}`;
+    const key = `${cleanUsername}@${cleanHostname}:${cleanPort}`;
     if (seen.has(key)) {
       return;
     }
@@ -78,7 +79,7 @@
     entries.push({
       username: cleanUsername,
       hostname: cleanHostname,
-      port: port ? String(port).trim() : ""
+      port: cleanPort
     });
   }
 
@@ -181,6 +182,65 @@
 
   function hostLinesFromManifest(xmlText, currentUser) {
     return formatHostLines(parseLoginEntriesFromManifest(xmlText), currentUser);
+  }
+
+  function normalizePort(port) {
+    const cleanPort = port ? String(port).trim() : "";
+    const parsedPort = Number.parseInt(cleanPort, 10);
+    if (!/^\d+$/.test(cleanPort) || parsedPort < 1 || parsedPort > 65535) {
+      return "22";
+    }
+    return cleanPort;
+  }
+
+  function shellQuote(value) {
+    return `'${String(value).replace(/'/g, "'\\''")}'`;
+  }
+
+  function shellSafeSshDestination(value) {
+    return /^[A-Za-z0-9._~-]+@[A-Za-z0-9._~:[\]-]+$/.test(value);
+  }
+
+  function formatSshDestination(value) {
+    return shellSafeSshDestination(value) ? value : shellQuote(value);
+  }
+
+  function formatSshTargets(loginEntries, currentUser) {
+    const targets = [];
+    const seen = new Set();
+    const cleanCurrentUser = currentUser ? String(currentUser).trim() : "";
+
+    loginEntries.forEach((entry) => {
+      const username = cleanCurrentUser || entry.username;
+      if (!username || !entry.hostname) {
+        return;
+      }
+
+      const port = normalizePort(entry.port);
+      const userAtHost = `${username}@${entry.hostname}`;
+      const key = `${userAtHost}:${port}`;
+      if (seen.has(key)) {
+        return;
+      }
+
+      seen.add(key);
+      targets.push({
+        username,
+        hostname: entry.hostname,
+        port,
+        userAtHost,
+        command:
+          port === "22"
+            ? `ssh ${formatSshDestination(userAtHost)}`
+            : `ssh -p ${port} ${formatSshDestination(userAtHost)}`
+      });
+    });
+
+    return targets;
+  }
+
+  function sshTargetsFromManifest(xmlText, currentUser) {
+    return formatSshTargets(parseLoginEntriesFromManifest(xmlText), currentUser);
   }
 
   function appendAjaxArg(params, key, value) {
@@ -390,10 +450,12 @@
     extractUuidFromText,
     extractUuidFromUrl,
     formatHostLines,
+    formatSshTargets,
     hasManifestXml,
     hostLinesFromManifest,
     makeStatusUrl,
     parseLoginEntriesFromManifest,
-    sanitizeFilenamePart
+    sanitizeFilenamePart,
+    sshTargetsFromManifest
   };
 });

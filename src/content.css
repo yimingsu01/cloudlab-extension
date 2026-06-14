@@ -35,6 +35,15 @@
   background: #166b2f;
 }
 
+.cloudlab-host-downloader-copy-button {
+  background: #8250df;
+  border-color: #6f42c1;
+}
+
+.cloudlab-host-downloader-copy-button:hover {
+  background: #6f42c1;
+}
+
 .cloudlab-host-downloader-inline-button {
   margin-left: 0.5rem;
   padding: 0.2rem 0.5rem;

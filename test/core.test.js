@@ -41,6 +41,61 @@ test("parses prefixed login entries and skips unusable entries", () => {
   ]);
 });
 
+test("formats SSH targets with ports and port-aware distinctness", () => {
+  const xml = `<rspec>
+    <node>
+      <services>
+        <login username="creator" hostname="shared.example.cloudlab.us" port="2201" />
+        <login username="creator" hostname="shared.example.cloudlab.us" port="2202" />
+        <login username="creator" hostname="default.example.cloudlab.us" port="22" />
+      </services>
+    </node>
+  </rspec>`;
+
+  assert.deepEqual(core.sshTargetsFromManifest(xml, "alice"), [
+    {
+      username: "alice",
+      hostname: "shared.example.cloudlab.us",
+      port: "2201",
+      userAtHost: "alice@shared.example.cloudlab.us",
+      command: "ssh -p 2201 alice@shared.example.cloudlab.us"
+    },
+    {
+      username: "alice",
+      hostname: "shared.example.cloudlab.us",
+      port: "2202",
+      userAtHost: "alice@shared.example.cloudlab.us",
+      command: "ssh -p 2202 alice@shared.example.cloudlab.us"
+    },
+    {
+      username: "alice",
+      hostname: "default.example.cloudlab.us",
+      port: "22",
+      userAtHost: "alice@default.example.cloudlab.us",
+      command: "ssh alice@default.example.cloudlab.us"
+    }
+  ]);
+});
+
+test("shell-quotes unsafe SSH destinations", () => {
+  const xml = `<rspec>
+    <node>
+      <services>
+        <login username="alice" hostname="node.example.com;touch injected" port="2201" />
+        <login username="alice" hostname="node.example.com'bad" port="22" />
+      </services>
+    </node>
+  </rspec>`;
+
+  assert.deepEqual(
+    core.sshTargetsFromManifest(xml, "").map((target) => target.command),
+    [
+      "ssh -p 2201 'alice@node.example.com;touch injected'",
+      "ssh 'alice@node.example.com'\\''bad'"
+    ]
+  );
+});
+
 test("builds CloudLab AJAX POST bodies", () => {
   const body = core.buildAjaxFormBody("status", "GetInstanceManifests", {
     uuid: "11111111-2222-3333-4444-555555555555",
