@@ -4,11 +4,13 @@
   const core = window.CloudLabHostDownloaderCore;
   const BUTTON_CLASS = "cloudlab-host-downloader-button";
   const PAGE_ACTION_ID = "cloudlab-host-downloader-page-action";
+  const DASHBOARD_PANEL_ID = "cloudlab-host-downloader-dashboard-panel";
   const TARGET_ATTR = "data-cloudlab-host-downloader-target";
   const SCAN_DELAY_MS = 250;
 
   let scanTimer = 0;
   let pageContext;
+  let dashboardLoadPromise;
 
   function readPageGlobal(path) {
     try {
@@ -90,20 +92,27 @@
       return pageContext;
     }
 
-    const userId =
+    const loginUserId =
       cleanCloudLabUserId(readPageGlobal(["APT_OPTIONS", "thisUid"])) ||
       cleanCloudLabUserId(readPageGlobal(["APT_OPTIONS", "this_uid"])) ||
       cleanCloudLabUserId(readPageGlobal(["LOGINUID"])) ||
-      cleanCloudLabUserId(readPageGlobal(["TARGET_USER"])) ||
       cleanCloudLabUserId(
         readInlineScriptValue(/thisUid["']?\s*[:=]\s*["']([^"']+)["']/)
       ) ||
       cleanCloudLabUserId(
         readInlineScriptValue(/LOGINUID\s*=\s*["']([^"']+)["']/)
-      ) ||
+      );
+
+    const targetUserId =
+      cleanCloudLabUserId(readPageGlobal(["TARGET_USER"])) ||
       cleanCloudLabUserId(
         readInlineScriptValue(/TARGET_USER\s*=\s*["']([^"']+)["']/)
       ) ||
+      cleanCloudLabUserId(new URL(location.href).searchParams.get("target_user"));
+
+    const userId =
+      loginUserId ||
+      targetUserId ||
       readUserIdFromDom();
 
     const ajaxUrl =
@@ -114,6 +123,7 @@
 
     pageContext = {
       userId,
+      targetUserId,
       ajaxUrl: ajaxUrl ? new URL(String(ajaxUrl), location.href).href : ""
     };
 
@@ -375,15 +385,18 @@
     return button;
   }
 
-  function hasButtonForUuid(uuid) {
+  function buttonSelectorForUuid(uuid) {
     const escapedUuid =
       window.CSS && typeof window.CSS.escape === "function"
         ? window.CSS.escape(uuid)
         : String(uuid).replace(/["\\]/g, "\\$&");
 
-    return Boolean(
-      document.querySelector(`[${TARGET_ATTR}="${escapedUuid}"]`)
-    );
+    return `[${TARGET_ATTR}="${escapedUuid}"]`;
+  }
+
+  function hasButtonForUuid(uuid, scope) {
+    const root = scope || document;
+    return Boolean(root.querySelector(buttonSelectorForUuid(uuid)));
   }
 
   function labelFromContainer(container, fallback) {
@@ -414,7 +427,7 @@
   }
 
   function appendButtonToContainer(container, descriptor) {
-    if (!container || hasButtonForUuid(descriptor.uuid)) {
+    if (!container || hasButtonForUuid(descriptor.uuid, container)) {
       return;
     }
 
@@ -455,6 +468,186 @@
       container,
       isCurrentPage: uuid === core.extractUuidFromUrl(location.href)
     };
+  }
+
+  function isDashboardPage() {
+    return /\/(?:portal\/)?user-dashboard\.php$/.test(location.pathname);
+  }
+
+  function dashboardExperimentDescriptor(value, group, index) {
+    if (!value || !core.extractUuidFromText(value.uuid || "")) {
+      return null;
+    }
+
+    const name = String(value.name || value.eid || value.uuid).trim();
+    const project = String(value.project || value.pid || "").trim();
+    const creator = String(value.creator || "").trim();
+    const labelParts = [project, name].filter(Boolean);
+
+    return {
+      uuid: value.uuid,
+      statusUrl: core.makeStatusUrl(value.uuid, location.href),
+      label: labelParts.length ? labelParts.join(" / ") : value.uuid,
+      name,
+      project,
+      creator,
+      dashboardGroup: group,
+      dashboardIndex: index,
+      isCurrentPage: false
+    };
+  }
+
+  function normalizeText(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+
+  function rowMatchesExperiment(row, descriptor) {
+    const rowText = normalizeText(row.textContent);
+    const required = [descriptor.name, descriptor.project]
+      .map(normalizeText)
+      .filter(Boolean);
+
+    return required.every((value) => rowText.includes(value));
+  }
+
+  function findDashboardRow(containerSelector, descriptor, fallbackIndex) {
+    const rows = Array.from(
+      document.querySelectorAll(`${containerSelector} #experiments_table tbody tr`)
+    );
+    if (rows.length === 0) {
+      return null;
+    }
+
+    const exactRow = rows.find((row) => rowMatchesExperiment(row, descriptor));
+    if (exactRow) {
+      return exactRow;
+    }
+
+    return rows[fallbackIndex] || null;
+  }
+
+  function addDashboardTableButtons(descriptors, group, containerSelector) {
+    descriptors
+      .filter((descriptor) => descriptor.dashboardGroup === group)
+      .forEach((descriptor, index) => {
+        const row = findDashboardRow(containerSelector, descriptor, index);
+        if (row) {
+          appendButtonToContainer(row, descriptor);
+        }
+      });
+  }
+
+  function createDashboardPanel(descriptors) {
+    let panel = document.getElementById(DASHBOARD_PANEL_ID);
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = DASHBOARD_PANEL_ID;
+    }
+
+    panel.textContent = "";
+    const heading = document.createElement("h4");
+    heading.textContent = "CloudLab host downloads";
+    panel.append(heading);
+
+    descriptors.forEach((descriptor) => {
+      const row = document.createElement("div");
+      row.className = "cloudlab-host-downloader-dashboard-row";
+
+      const label = document.createElement("span");
+      label.className = "cloudlab-host-downloader-dashboard-label";
+      label.textContent = descriptor.label;
+
+      row.append(label, createButton(descriptor));
+      panel.append(row);
+    });
+
+    const experimentsTab =
+      document.querySelector("#experiments") ||
+      document.querySelector("#experiments_content") ||
+      document.body;
+    const firstContent =
+      document.querySelector("#experiments_content") ||
+      experimentsTab.firstElementChild;
+
+    if (!panel.isConnected) {
+      if (firstContent && firstContent.parentElement) {
+        firstContent.insertAdjacentElement("beforebegin", panel);
+      } else {
+        experimentsTab.prepend(panel);
+      }
+    }
+  }
+
+  function renderDashboardExperimentButtons(descriptors) {
+    if (descriptors.length === 0) {
+      return;
+    }
+
+    addDashboardTableButtons(descriptors, "user", "#experiments_content");
+    addDashboardTableButtons(
+      descriptors,
+      "project",
+      "#project_experiments_content"
+    );
+    createDashboardPanel(descriptors);
+  }
+
+  async function loadDashboardExperiments() {
+    const context = getPageContext();
+    const uid = context.targetUserId || context.userId;
+    if (!uid) {
+      return [];
+    }
+
+    const result = await callServerMethodWithFallback(
+      location.href,
+      "user-dashboard",
+      "ExperimentList",
+      { uid }
+    );
+    const value = result.value || {};
+    const userExperiments = experimentListValues(value.user_experiments);
+    const projectExperiments = experimentListValues(value.project_experiments);
+
+    return [
+      ...userExperiments
+        .map((experiment, index) =>
+          dashboardExperimentDescriptor(experiment, "user", index)
+        )
+        .filter(Boolean),
+      ...projectExperiments
+        .map((experiment, index) =>
+          dashboardExperimentDescriptor(experiment, "project", index)
+        )
+        .filter(Boolean)
+    ];
+  }
+
+  function experimentListValues(value) {
+    if (Array.isArray(value)) {
+      return value;
+    }
+
+    if (value && typeof value === "object") {
+      return Object.values(value);
+    }
+
+    return [];
+  }
+
+  function addDashboardExperimentButtons() {
+    if (!isDashboardPage()) {
+      return;
+    }
+
+    if (!dashboardLoadPromise) {
+      dashboardLoadPromise = loadDashboardExperiments().catch((error) => {
+        console.warn("CloudLab Host Downloader dashboard load failed:", error);
+        return [];
+      });
+    }
+
+    dashboardLoadPromise.then(renderDashboardExperimentButtons);
   }
 
   function classAndIdText(element) {
@@ -545,6 +738,7 @@
 
     addCurrentStatusPageButton();
     addButtonsForExperimentLists();
+    addDashboardExperimentButtons();
   }
 
   function scheduleScan() {
