@@ -3,7 +3,6 @@
 
   const core = window.CloudLabHostDownloaderCore || globalThis.CloudLabHostDownloaderCore;
   const BUTTON_CLASS = "cloudlab-host-downloader-button";
-  const PAGE_ACTION_ID = "cloudlab-host-downloader-page-action";
   const DASHBOARD_PANEL_ID = "cloudlab-host-downloader-dashboard-panel";
   const TARGET_ATTR = "data-cloudlab-host-downloader-target";
   const SCAN_DELAY_MS = 250;
@@ -909,8 +908,6 @@
       return;
     }
 
-    addCurrentStatusPageButton();
-    addButtonsForExperimentLists();
     addDashboardExperimentButtons();
   }
 

@@ -1,14 +1,17 @@
 {
   "manifest_version": 3,
   "name": "CloudLab Host Downloader",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Adds CloudLab experiment buttons that download SSH targets as user@hostname lines.",
   "content_scripts": [
     {
       "matches": [
-        "https://cloudlab.us/*",
-        "https://www.cloudlab.us/*",
-        "https://*.cloudlab.us/*"
+        "https://cloudlab.us/user-dashboard.php*",
+        "https://www.cloudlab.us/user-dashboard.php*",
+        "https://*.cloudlab.us/user-dashboard.php*",
+        "https://cloudlab.us/portal/user-dashboard.php*",
+        "https://www.cloudlab.us/portal/user-dashboard.php*",
+        "https://*.cloudlab.us/portal/user-dashboard.php*"
       ],
       "js": [
         "src/core.js",
